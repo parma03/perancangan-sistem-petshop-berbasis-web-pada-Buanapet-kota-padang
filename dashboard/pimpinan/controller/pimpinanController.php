@@ -190,4 +190,199 @@ if (!defined('SKIP_ADMIN_CHECK')) {
     checkAdminAccess();
 }
 
+// Handle update profile request
+if (isset($_POST['action']) && $_POST['action'] === 'update_profile') {
+
+    $servername = "localhost";
+    $username = "root";
+    $password = "";
+    $database = "db_buanapetshop";
+
+    // Membuat koneksi
+    $conn = new mysqli($servername, $username, $password, $database);
+
+    // Memeriksa koneksi
+    if ($conn->connect_error) {
+        die("Koneksi gagal: " . $conn->connect_error);
+    }
+
+    // Pastikan user sudah login
+    if (!isset($_SESSION['user_id'])) {
+        sendJsonResponse(false, 'Anda harus login terlebih dahulu!');
+    }
+
+    $userId = $_SESSION['user_id'];
+    $nama = trim($_POST['nama'] ?? '');
+    $updatePassword = isset($_POST['current_password']) && !empty($_POST['current_password']);
+    $profileUpdated = false;
+
+    // Validasi input
+    if (empty($nama)) {
+        sendJsonResponse(false, 'Nama lengkap harus diisi!');
+    }
+
+    try {
+        // Mulai transaksi
+        mysqli_begin_transaction($conn);
+
+        // Handle upload foto profile jika ada
+        $newProfileImage = '';
+        if (isset($_FILES['profile_photo']) && $_FILES['profile_photo']['error'] === UPLOAD_ERR_OK) {
+
+            $uploadDir = '../../../assets/uploads/profile/';
+
+            // Buat folder jika belum ada
+            if (!is_dir($uploadDir)) {
+                mkdir($uploadDir, 0755, true);
+            }
+
+            $file = $_FILES['profile_photo'];
+            $fileName = $file['name'];
+            $fileTmpName = $file['tmp_name'];
+            $fileSize = $file['size'];
+            $fileType = $file['type'];
+
+            // Validasi file
+            $allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+            $maxSize = 2 * 1024 * 1024; // 2MB
+
+            if (!in_array($fileType, $allowedTypes)) {
+                throw new Exception('Format file tidak didukung! Gunakan JPG, PNG, atau GIF.');
+            }
+
+            if ($fileSize > $maxSize) {
+                throw new Exception('Ukuran file terlalu besar! Maksimal 2MB.');
+            }
+
+            // Generate nama file unik
+            $fileExtension = pathinfo($fileName, PATHINFO_EXTENSION);
+            $newFileName = 'profile_' . $userId . '_' . time() . '.' . $fileExtension;
+            $uploadPath = $uploadDir . $newFileName;
+
+            // Upload file
+            if (move_uploaded_file($fileTmpName, $uploadPath)) {
+                $newProfileImage = $newFileName;
+
+                // Hapus foto lama jika ada - PERBAIKAN: Query ke tb_pimpinan
+                $oldProfileQuery = "SELECT profile FROM tb_pimpinan WHERE id_user = ?";
+                $oldProfileStmt = mysqli_prepare($conn, $oldProfileQuery);
+                mysqli_stmt_bind_param($oldProfileStmt, "i", $userId);
+                mysqli_stmt_execute($oldProfileStmt);
+                $oldProfileResult = mysqli_stmt_get_result($oldProfileStmt);
+                $oldProfile = mysqli_fetch_assoc($oldProfileResult);
+
+                if (!empty($oldProfile['profile'])) {
+                    $oldFilePath = $uploadDir . $oldProfile['profile'];
+                    if (file_exists($oldFilePath)) {
+                        unlink($oldFilePath);
+                    }
+                }
+
+                $profileUpdated = true;
+            } else {
+                throw new Exception('Gagal mengupload foto profile!');
+            }
+        }
+
+        // PERBAIKAN: Update data pimpinan (nama dan profile di tb_pimpinan)
+        $updateQuery = "UPDATE tb_pimpinan SET nama = ?";
+        $params = [$nama];
+        $types = "s";
+
+        // Tambahkan foto profile jika ada
+        if (!empty($newProfileImage)) {
+            $updateQuery .= ", profile = ?";
+            $params[] = $newProfileImage;
+            $types .= "s";
+        }
+
+        $updateQuery .= " WHERE id_user = ?";
+        $params[] = $userId;
+        $types .= "i";
+
+        $updateStmt = mysqli_prepare($conn, $updateQuery);
+        mysqli_stmt_bind_param($updateStmt, $types, ...$params);
+
+        if (!mysqli_stmt_execute($updateStmt)) {
+            throw new Exception('Gagal mengupdate data profile!');
+        }
+
+        // Update password jika diminta - PERBAIKAN: Password di tb_user
+        if ($updatePassword) {
+            $currentPassword = $_POST['current_password'];
+            $newPassword = $_POST['new_password'];
+            $confirmPassword = $_POST['confirm_password'];
+
+            // Validasi password
+            if (empty($currentPassword) || empty($newPassword) || empty($confirmPassword)) {
+                throw new Exception('Semua field password harus diisi!');
+            }
+
+            if ($newPassword !== $confirmPassword) {
+                throw new Exception('Konfirmasi password tidak cocok!');
+            }
+
+            if (strlen($newPassword) < 6) {
+                throw new Exception('Password baru minimal 6 karakter!');
+            }
+
+            // PERBAIKAN: Cek password lama dari tb_user
+            $checkPasswordQuery = "SELECT password FROM tb_user WHERE id_user = ?";
+            $checkPasswordStmt = mysqli_prepare($conn, $checkPasswordQuery);
+            mysqli_stmt_bind_param($checkPasswordStmt, "i", $userId);
+            mysqli_stmt_execute($checkPasswordStmt);
+            $passwordResult = mysqli_stmt_get_result($checkPasswordStmt);
+            $userPassword = mysqli_fetch_assoc($passwordResult);
+
+            if (!password_verify($currentPassword, $userPassword['password'])) {
+                throw new Exception('Password lama tidak sesuai!');
+            }
+
+            // PERBAIKAN: Update password di tb_user
+            $hashedPassword = password_hash($newPassword, PASSWORD_DEFAULT);
+            $updatePasswordQuery = "UPDATE tb_user SET password = ? WHERE id_user = ?";
+            $updatePasswordStmt = mysqli_prepare($conn, $updatePasswordQuery);
+            mysqli_stmt_bind_param($updatePasswordStmt, "si", $hashedPassword, $userId);
+
+            if (!mysqli_stmt_execute($updatePasswordStmt)) {
+                throw new Exception('Gagal mengupdate password!');
+            }
+        }
+
+        // Update session dengan data terbaru
+        $_SESSION['nama'] = $nama;
+        if (!empty($newProfileImage)) {
+            $_SESSION['profile'] = $newProfileImage;
+        }
+
+        // Commit transaksi
+        mysqli_commit($conn);
+
+        // Response sukses
+        $message = 'Profile berhasil diupdate!';
+        if ($updatePassword) {
+            $message .= ' Password juga telah diubah.';
+        }
+
+        sendJsonResponse(true, $message, [
+            'profile_updated' => $profileUpdated,
+            'type' => 'success'
+        ]);
+
+    } catch (Exception $e) {
+        // Rollback transaksi
+        mysqli_rollback($conn);
+
+        // Hapus file yang sudah diupload jika ada error
+        if (!empty($newProfileImage) && file_exists($uploadDir . $newProfileImage)) {
+            unlink($uploadDir . $newProfileImage);
+        }
+
+        sendJsonResponse(false, $e->getMessage());
+    }
+
+    // Tutup koneksi
+    mysqli_close($conn);
+}
+
 ?>

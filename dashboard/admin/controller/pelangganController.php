@@ -22,7 +22,7 @@ function isAjaxRequest()
 // Function to get profile image or initials
 function getProfileDisplay($nama, $profile)
 {
-    $profile_path = "../../../assets/uploads/profile/";
+    $profile_path = "../../";
 
     if (!empty($profile) && file_exists($profile_path . $profile)) {
         return '<img src="' . $profile_path . htmlspecialchars($profile) . '" 
@@ -40,7 +40,7 @@ function getProfileDisplay($nama, $profile)
 // Function to get large profile display for detail view
 function getLargeProfileDisplay($nama, $profile)
 {
-    $profile_path = "../../../assets/uploads/profile/";
+    $profile_path = "../../";
 
     if (!empty($profile) && file_exists($profile_path . $profile)) {
         return '<img src="' . $profile_path . htmlspecialchars($profile) . '" 

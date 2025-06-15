@@ -58,10 +58,11 @@ function handleLogin($conn)
 
     try {
         $stmt = $conn->prepare("SELECT u.id_user, u.username, u.password, u.role, 
-                                COALESCE(p.nama, a.nama) as nama,
-                                COALESCE(p.profile, a.profile) as profile
+                                COALESCE(p.nama, a.nama, pp.nama) as nama,
+                                COALESCE(p.profile, a.profile, pp.nama) as profile
                                 FROM tb_user u 
                                 LEFT JOIN tb_pelanggan p ON u.id_user = p.id_user 
+                                LEFT JOIN tb_pimpinan pp ON u.id_user = pp.id_user 
                                 LEFT JOIN tb_admin a ON u.id_user = a.id_user 
                                 WHERE u.username = ?");
         $stmt->bind_param("s", $username);

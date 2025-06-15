@@ -92,7 +92,7 @@ $priceRange = getPriceRange($conn);
     <!-- Modal -->
     <?php include '_component/modalauth.php'; ?>
     <?php include '_component/modalpesanan.php'; ?>
-
+    <?php include '_component/modalprofile.php'; ?>
     <!-- Hero Section -->
     <section id="billboard" class="bg-light py-5">
         <div class="container">

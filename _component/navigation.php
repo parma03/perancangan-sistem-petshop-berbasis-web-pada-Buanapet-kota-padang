@@ -91,7 +91,7 @@
                                 <li>
                                     <hr class="dropdown-divider">
                                 </li>
-                                <li><a class="dropdown-item" href="profile.php">
+                                <li><a class="dropdown-item" href="#" onclick="openEditProfileModal()">
                                         <svg width="16" height="16" viewBox="0 0 24 24" class="me-2">
                                             <use xlink:href="#user"></use>
                                         </svg>Profile</a>

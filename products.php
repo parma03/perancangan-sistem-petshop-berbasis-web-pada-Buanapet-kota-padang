@@ -192,6 +192,7 @@ $priceRange = getPriceRange($conn);
     <!-- Auth Modal -->
     <?php include '_component/modalauth.php'; ?>
     <?php include '_component/modalpesanan.php'; ?>
+    <?php include '_component/modalprofile.php'; ?>
     <div class="container my-5">
         <div class="row">
             <!-- Filter Sidebar -->

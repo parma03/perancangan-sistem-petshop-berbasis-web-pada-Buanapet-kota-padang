@@ -445,6 +445,7 @@ $productTypes = getProductTypes($conn);
     <!-- Auth Modal -->
     <?php include '_component/modalauth.php'; ?>
     <?php include '_component/modalpesanan.php'; ?>
+    <?php include '_component/modalprofile.php'; ?>
     <main>
         <!-- Hero Section -->
         <section class="hero-section bg-light py-5">
