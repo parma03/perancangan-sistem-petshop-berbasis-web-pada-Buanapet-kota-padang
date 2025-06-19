@@ -70,43 +70,86 @@ function handleBookingService($conn) {
             exit;
         }
         
-        // Check for existing bookings at the same time
-        $check_booking = "SELECT * FROM tb_booking WHERE id_service = ? AND waktu_booking = ?";
-        $stmt = $conn->prepare($check_booking);
+        // Start transaction untuk memastikan atomicity
+        $conn->begin_transaction();
         
-        if (!$stmt) {
-            throw new Exception('Database preparation error: ' . $conn->error);
-        }
-        
-        $stmt->bind_param("is", $id_service, $waktu_booking);
-        $stmt->execute();
-        $booking_result = $stmt->get_result();
-        
-        if ($booking_result->num_rows > 0) {
-            echo json_encode([
-                'success' => false,
-                'message' => 'Slot waktu tersebut sudah dibooking, silakan pilih waktu lain!'
-            ]);
-            exit;
-        }
-        
-        // Insert booking
-        $insert_booking = "INSERT INTO tb_booking (id_service, id_user, waktu_booking) VALUES (?, ?, ?)";
-        $stmt = $conn->prepare($insert_booking);
-        
-        if (!$stmt) {
-            throw new Exception('Database preparation error: ' . $conn->error);
-        }
-        
-        $stmt->bind_param("iis", $id_service, $id_user, $waktu_booking);
-        
-        if ($stmt->execute()) {
-            echo json_encode([
-                'success' => true,
-                'message' => 'Booking berhasil! Silakan lakukan pembayaran.'
-            ]);
-        } else {
-            throw new Exception('Gagal menyimpan booking: ' . $stmt->error);
+        try {
+            // Hapus booking yang sudah expired (lebih dari 30 menit tanpa pembayaran)
+            $cleanup_expired = "DELETE b FROM tb_booking b 
+                               LEFT JOIN tb_transaksi_service ts ON b.id_booking = ts.id_booking 
+                               WHERE ts.id_booking IS NULL 
+                               AND b.created_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE)";
+            $conn->query($cleanup_expired);
+            
+            // Check for existing bookings at the same time (termasuk yang belum bayar)
+            $check_booking = "SELECT b.*, ts.id_transaksi_service, ts.status_transaksi_service 
+                             FROM tb_booking b 
+                             LEFT JOIN tb_transaksi_service ts ON b.id_booking = ts.id_booking 
+                             WHERE b.id_service = ? AND b.waktu_booking = ?";
+            $stmt = $conn->prepare($check_booking);
+            
+            if (!$stmt) {
+                throw new Exception('Database preparation error: ' . $conn->error);
+            }
+            
+            $stmt->bind_param("is", $id_service, $waktu_booking);
+            $stmt->execute();
+            $booking_result = $stmt->get_result();
+            
+            if ($booking_result->num_rows > 0) {
+                $existing_booking = $booking_result->fetch_assoc();
+                
+                // Jika ada booking yang sudah dibayar atau sedang pending
+                if ($existing_booking['id_transaksi_service'] !== null) {
+                    echo json_encode([
+                        'success' => false,
+                        'message' => 'Slot waktu tersebut sudah dibooking oleh pengguna lain!'
+                    ]);
+                    $conn->rollback();
+                    exit;
+                }
+                
+                // Jika ada booking yang belum bayar, cek apakah itu milik user yang sama
+                if ($existing_booking['id_user'] == $id_user) {
+                    echo json_encode([
+                        'success' => false,
+                        'message' => 'Anda sudah memiliki booking pada waktu tersebut. Silakan lakukan pembayaran atau pilih waktu lain!'
+                    ]);
+                    $conn->rollback();
+                    exit;
+                } else {
+                    // Jika booking milik user lain dan belum bayar, hapus booking lama
+                    $delete_old_booking = "DELETE FROM tb_booking WHERE id_booking = ?";
+                    $delete_stmt = $conn->prepare($delete_old_booking);
+                    $delete_stmt->bind_param("i", $existing_booking['id_booking']);
+                    $delete_stmt->execute();
+                }
+            }
+            
+            // Insert booking baru dengan timestamp
+            $insert_booking = "INSERT INTO tb_booking (id_service, id_user, waktu_booking, created_at) VALUES (?, ?, ?, NOW())";
+            $stmt = $conn->prepare($insert_booking);
+            
+            if (!$stmt) {
+                throw new Exception('Database preparation error: ' . $conn->error);
+            }
+            
+            $stmt->bind_param("iis", $id_service, $id_user, $waktu_booking);
+            
+            if ($stmt->execute()) {
+                $conn->commit();
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Booking berhasil! Silakan lakukan pembayaran dalam 30 menit.',
+                    'booking_id' => $conn->insert_id
+                ]);
+            } else {
+                throw new Exception('Gagal menyimpan booking: ' . $stmt->error);
+            }
+            
+        } catch (Exception $e) {
+            $conn->rollback();
+            throw $e;
         }
         
     } catch (Exception $e) {
@@ -121,7 +164,7 @@ function handleBookingService($conn) {
 }
 
 
-// Function to handle payment upload
+// Function to handle payment upload with conflict resolution
 function handlePaymentUpload($conn) {
     // Set header JSON jika ini adalah AJAX request
     if (isset($_POST['ajax']) || isset($_SERVER['HTTP_X_REQUESTED_WITH'])) {
@@ -144,67 +187,133 @@ function handlePaymentUpload($conn) {
     
     try {
         $id_booking = $_POST['id_booking'] ?? null;
+        $id_user = $_SESSION['user_id'];
         $status = 'pending';
         
         if (!$id_booking) {
             throw new Exception('ID booking tidak valid');
         }
         
-        // Handle file upload
-        $bukti_pembayaran = null;
-        if (isset($_FILES['bukti_pembayaran']) && $_FILES['bukti_pembayaran']['error'] == 0) {
-            $upload_dir = 'assets/uploads/payment_proofs/';
-            if (!file_exists($upload_dir)) {
-                mkdir($upload_dir, 0777, true);
+        // Start transaction
+        $conn->begin_transaction();
+        
+        try {
+            // Cek apakah booking masih valid dan milik user ini
+            $check_booking = "SELECT b.*, ts.id_transaksi_service 
+                             FROM tb_booking b 
+                             LEFT JOIN tb_transaksi_service ts ON b.id_booking = ts.id_booking 
+                             WHERE b.id_booking = ? AND b.id_user = ?";
+            $stmt = $conn->prepare($check_booking);
+            $stmt->bind_param("ii", $id_booking, $id_user);
+            $stmt->execute();
+            $booking_result = $stmt->get_result();
+            
+            if ($booking_result->num_rows == 0) {
+                throw new Exception('Booking tidak ditemukan atau bukan milik Anda!');
             }
             
-            // Validasi file
-            $allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
-            $file_type = $_FILES['bukti_pembayaran']['type'];
+            $booking_data = $booking_result->fetch_assoc();
             
-            if (!in_array($file_type, $allowed_types)) {
-                throw new Exception('Format file tidak diizinkan. Gunakan JPG, PNG, atau GIF.');
+            // Cek apakah sudah ada transaksi untuk booking ini
+            if ($booking_data['id_transaksi_service'] !== null) {
+                throw new Exception('Pembayaran untuk booking ini sudah pernah diupload!');
             }
             
-            if ($_FILES['bukti_pembayaran']['size'] > 2 * 1024 * 1024) { // 2MB
-                throw new Exception('Ukuran file terlalu besar. Maksimal 2MB.');
+            // Cek apakah ada booking lain yang sudah dibayar pada waktu yang sama
+            $check_conflict = "SELECT b2.id_booking, ts2.status_transaksi_service 
+                              FROM tb_booking b1 
+                              INNER JOIN tb_booking b2 ON (b1.id_service = b2.id_service AND b1.waktu_booking = b2.waktu_booking) 
+                              INNER JOIN tb_transaksi_service ts2 ON b2.id_booking = ts2.id_booking 
+                              WHERE b1.id_booking = ? AND b2.id_booking != ? 
+                              AND ts2.status_transaksi_service IN ('pending', 'confirmed')";
+            $stmt = $conn->prepare($check_conflict);
+            $stmt->bind_param("ii", $id_booking, $id_booking);
+            $stmt->execute();
+            $conflict_result = $stmt->get_result();
+            
+            if ($conflict_result->num_rows > 0) {
+                // Ada konflik, hapus booking ini
+                $delete_booking = "DELETE FROM tb_booking WHERE id_booking = ?";
+                $delete_stmt = $conn->prepare($delete_booking);
+                $delete_stmt->bind_param("i", $id_booking);
+                $delete_stmt->execute();
+                
+                $conn->commit();
+                
+                if (isset($_POST['ajax']) || isset($_SERVER['HTTP_X_REQUESTED_WITH'])) {
+                    echo json_encode([
+                        'success' => false,
+                        'booking_cancelled' => true,
+                        'message' => 'Maaf, slot waktu tersebut sudah dibooking dan dibayar oleh pengguna lain. Booking Anda telah dibatalkan.'
+                    ]);
+                } else {
+                    echo "<script>alert('Maaf, slot waktu tersebut sudah dibooking dan dibayar oleh pengguna lain. Booking Anda telah dibatalkan.'); window.location.href='services.php';</script>";
+                }
+                return;
             }
             
-            $file_extension = pathinfo($_FILES['bukti_pembayaran']['name'], PATHINFO_EXTENSION);
-            $file_name = 'payment_service_' . $id_booking . '_' . time() . '.' . $file_extension;
-            $file_path = $upload_dir . $file_name;
-            
-            if (move_uploaded_file($_FILES['bukti_pembayaran']['tmp_name'], $file_path)) {
-                $bukti_pembayaran = $file_name;
+            // Handle file upload
+            $bukti_pembayaran = null;
+            if (isset($_FILES['bukti_pembayaran']) && $_FILES['bukti_pembayaran']['error'] == 0) {
+                $upload_dir = 'assets/uploads/payment_proofs/';
+                if (!file_exists($upload_dir)) {
+                    mkdir($upload_dir, 0777, true);
+                }
+                
+                // Validasi file
+                $allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+                $file_type = $_FILES['bukti_pembayaran']['type'];
+                
+                if (!in_array($file_type, $allowed_types)) {
+                    throw new Exception('Format file tidak diizinkan. Gunakan JPG, PNG, atau GIF.');
+                }
+                
+                if ($_FILES['bukti_pembayaran']['size'] > 2 * 1024 * 1024) { // 2MB
+                    throw new Exception('Ukuran file terlalu besar. Maksimal 2MB.');
+                }
+                
+                $file_extension = pathinfo($_FILES['bukti_pembayaran']['name'], PATHINFO_EXTENSION);
+                $file_name = 'payment_service_' . $id_booking . '_' . time() . '.' . $file_extension;
+                $file_path = $upload_dir . $file_name;
+                
+                if (move_uploaded_file($_FILES['bukti_pembayaran']['tmp_name'], $file_path)) {
+                    $bukti_pembayaran = $file_name;
+                } else {
+                    throw new Exception('Gagal mengupload file');
+                }
             } else {
-                throw new Exception('Gagal mengupload file');
+                throw new Exception('Bukti pembayaran harus diupload');
             }
-        } else {
-            throw new Exception('Bukti pembayaran harus diupload');
-        }
-        
-        // Insert transaction
-        $insert_transaction = "INSERT INTO tb_transaksi_service (id_booking, status_transaksi_service, bukti_transaksi_service, tgl_transaksi_service) 
-                              VALUES (?, ?, ?, NOW())";
-        $stmt = $conn->prepare($insert_transaction);
-        
-        if (!$stmt) {
-            throw new Exception('Database preparation error: ' . $conn->error);
-        }
-        
-        $stmt->bind_param("iss", $id_booking, $status, $bukti_pembayaran);
-        
-        if ($stmt->execute()) {
-            if (isset($_POST['ajax']) || isset($_SERVER['HTTP_X_REQUESTED_WITH'])) {
-                echo json_encode([
-                    'success' => true,
-                    'message' => 'Bukti pembayaran berhasil diupload! Menunggu konfirmasi admin.'
-                ]);
+            
+            // Insert transaction
+            $insert_transaction = "INSERT INTO tb_transaksi_service (id_booking, status_transaksi_service, bukti_transaksi_service, tgl_transaksi_service) 
+                                  VALUES (?, ?, ?, NOW())";
+            $stmt = $conn->prepare($insert_transaction);
+            
+            if (!$stmt) {
+                throw new Exception('Database preparation error: ' . $conn->error);
+            }
+            
+            $stmt->bind_param("iss", $id_booking, $status, $bukti_pembayaran);
+            
+            if ($stmt->execute()) {
+                $conn->commit();
+                
+                if (isset($_POST['ajax']) || isset($_SERVER['HTTP_X_REQUESTED_WITH'])) {
+                    echo json_encode([
+                        'success' => true,
+                        'message' => 'Bukti pembayaran berhasil diupload! Menunggu konfirmasi admin.'
+                    ]);
+                } else {
+                    echo "<script>alert('Bukti pembayaran berhasil diupload! Menunggu konfirmasi admin.'); window.location.href='services.php';</script>";
+                }
             } else {
-                echo "<script>alert('Bukti pembayaran berhasil diupload! Menunggu konfirmasi admin.'); window.location.href='services.php';</script>";
+                throw new Exception('Gagal menyimpan transaksi: ' . $stmt->error);
             }
-        } else {
-            throw new Exception('Gagal menyimpan transaksi: ' . $stmt->error);
+            
+        } catch (Exception $e) {
+            $conn->rollback();
+            throw $e;
         }
         
     } catch (Exception $e) {
@@ -222,6 +331,29 @@ function handlePaymentUpload($conn) {
     
     if (isset($_POST['ajax']) || isset($_SERVER['HTTP_X_REQUESTED_WITH'])) {
         exit;
+    }
+}
+
+// Function untuk cleanup booking yang expired (bisa dijalankan via cron job)
+function cleanupExpiredBookings($conn) {
+    try {
+        $cleanup_query = "DELETE b FROM tb_booking b 
+                         LEFT JOIN tb_transaksi_service ts ON b.id_booking = ts.id_booking 
+                         WHERE ts.id_booking IS NULL 
+                         AND b.created_at < DATE_SUB(NOW(), INTERVAL 30 MINUTE)";
+        
+        $result = $conn->query($cleanup_query);
+        
+        if ($result) {
+            $deleted_count = $conn->affected_rows;
+            error_log("Cleanup: $deleted_count expired bookings deleted");
+            return $deleted_count;
+        }
+        
+        return 0;
+    } catch (Exception $e) {
+        error_log('Cleanup Error: ' . $e->getMessage());
+        return 0;
     }
 }
 // Function to translate English day names to Indonesian
