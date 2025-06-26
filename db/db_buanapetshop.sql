@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jun 26, 2025 at 09:16 AM
+-- Generation Time: Jun 26, 2025 at 09:29 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -67,15 +67,17 @@ CREATE TABLE `tb_booking` (
   `id_booking` bigint(11) NOT NULL,
   `id_service` bigint(11) NOT NULL,
   `id_user` bigint(11) NOT NULL,
-  `waktu_booking` datetime NOT NULL
+  `waktu_booking` datetime NOT NULL,
+  `created_at` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Dumping data for table `tb_booking`
 --
 
-INSERT INTO `tb_booking` (`id_booking`, `id_service`, `id_user`, `waktu_booking`) VALUES
-(18, 6, 28, '2025-06-23 20:00:00');
+INSERT INTO `tb_booking` (`id_booking`, `id_service`, `id_user`, `waktu_booking`, `created_at`) VALUES
+(18, 6, 28, '2025-06-23 20:00:00', NULL),
+(20, 6, 27, '2025-06-30 20:00:00', '2025-06-26 14:29:04');
 
 -- --------------------------------------------------------
 
@@ -330,7 +332,7 @@ ALTER TABLE `tb_barang`
 -- AUTO_INCREMENT for table `tb_booking`
 --
 ALTER TABLE `tb_booking`
-  MODIFY `id_booking` bigint(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=19;
+  MODIFY `id_booking` bigint(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
 
 --
 -- AUTO_INCREMENT for table `tb_cart`
