@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: May 25, 2025 at 11:12 AM
+-- Generation Time: Jun 26, 2025 at 09:16 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -39,7 +39,7 @@ CREATE TABLE `tb_admin` (
 --
 
 INSERT INTO `tb_admin` (`id_admin`, `id_user`, `nama`, `profile`) VALUES
-(1, 3, 'admin111', NULL);
+(1, 3, 'admin111', 'profile_3_1749987691.jpg');
 
 -- --------------------------------------------------------
 
@@ -70,6 +70,13 @@ CREATE TABLE `tb_booking` (
   `waktu_booking` datetime NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `tb_booking`
+--
+
+INSERT INTO `tb_booking` (`id_booking`, `id_service`, `id_user`, `waktu_booking`) VALUES
+(18, 6, 28, '2025-06-23 20:00:00');
+
 -- --------------------------------------------------------
 
 --
@@ -97,6 +104,13 @@ CREATE TABLE `tb_jadwal` (
   `duty_end` time NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `tb_jadwal`
+--
+
+INSERT INTO `tb_jadwal` (`id_jadwal`, `id_service`, `hari`, `duty_start`, `duty_end`) VALUES
+(21, 6, 'Senin', '20:00:00', '21:00:00');
+
 -- --------------------------------------------------------
 
 --
@@ -109,6 +123,14 @@ CREATE TABLE `tb_pelanggan` (
   `nama` varchar(255) NOT NULL,
   `profile` varchar(255) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `tb_pelanggan`
+--
+
+INSERT INTO `tb_pelanggan` (`id_pelanggan`, `id_user`, `nama`, `profile`) VALUES
+(10, 27, 'tes1123', '../assets/uploads/profile/profile_27_1749986364.png'),
+(11, 28, 'Adamas', NULL);
 
 -- --------------------------------------------------------
 
@@ -128,7 +150,7 @@ CREATE TABLE `tb_pimpinan` (
 --
 
 INSERT INTO `tb_pimpinan` (`id_pimpinan`, `id_user`, `nama`, `profile`) VALUES
-(11, 26, 'tespimpinan1', NULL);
+(11, 26, 'tespimpinan11', 'profile_26_1749988327.jpg');
 
 -- --------------------------------------------------------
 
@@ -142,6 +164,13 @@ CREATE TABLE `tb_service` (
   `deskripsi_service` varchar(255) NOT NULL,
   `harga_service` varchar(255) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `tb_service`
+--
+
+INSERT INTO `tb_service` (`id_service`, `nama_service`, `deskripsi_service`, `harga_service`) VALUES
+(6, 'Grooming Basic', 'tes', '100000');
 
 -- --------------------------------------------------------
 
@@ -171,6 +200,13 @@ CREATE TABLE `tb_transaksi_service` (
   `tgl_transaksi_service` date NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `tb_transaksi_service`
+--
+
+INSERT INTO `tb_transaksi_service` (`id_transaksi_service`, `id_booking`, `status_transaksi_service`, `bukti_transaksi_service`, `tgl_transaksi_service`) VALUES
+(9, 18, 'pending', 'payment_service_18_1750341797.jpg', '2025-06-19');
+
 -- --------------------------------------------------------
 
 --
@@ -190,7 +226,9 @@ CREATE TABLE `tb_user` (
 
 INSERT INTO `tb_user` (`id_user`, `username`, `password`, `role`) VALUES
 (3, 'admin1', '123', 'admin'),
-(26, 'tespimpinan1', '123123', 'pimpinan');
+(26, 'tespimpinan1', '123123', 'pimpinan'),
+(27, 'tes1123', '123123', 'pelanggan'),
+(28, 'tes123', '123123', 'pelanggan');
 
 --
 -- Indexes for dumped tables
@@ -292,7 +330,7 @@ ALTER TABLE `tb_barang`
 -- AUTO_INCREMENT for table `tb_booking`
 --
 ALTER TABLE `tb_booking`
-  MODIFY `id_booking` bigint(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=17;
+  MODIFY `id_booking` bigint(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=19;
 
 --
 -- AUTO_INCREMENT for table `tb_cart`
@@ -304,13 +342,13 @@ ALTER TABLE `tb_cart`
 -- AUTO_INCREMENT for table `tb_jadwal`
 --
 ALTER TABLE `tb_jadwal`
-  MODIFY `id_jadwal` bigint(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=21;
+  MODIFY `id_jadwal` bigint(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=22;
 
 --
 -- AUTO_INCREMENT for table `tb_pelanggan`
 --
 ALTER TABLE `tb_pelanggan`
-  MODIFY `id_pelanggan` bigint(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
+  MODIFY `id_pelanggan` bigint(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
 
 --
 -- AUTO_INCREMENT for table `tb_pimpinan`
@@ -322,7 +360,7 @@ ALTER TABLE `tb_pimpinan`
 -- AUTO_INCREMENT for table `tb_service`
 --
 ALTER TABLE `tb_service`
-  MODIFY `id_service` bigint(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+  MODIFY `id_service` bigint(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `tb_transaksi_cart`
@@ -334,13 +372,13 @@ ALTER TABLE `tb_transaksi_cart`
 -- AUTO_INCREMENT for table `tb_transaksi_service`
 --
 ALTER TABLE `tb_transaksi_service`
-  MODIFY `id_transaksi_service` bigint(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+  MODIFY `id_transaksi_service` bigint(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=10;
 
 --
 -- AUTO_INCREMENT for table `tb_user`
 --
 ALTER TABLE `tb_user`
-  MODIFY `id_user` bigint(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=27;
+  MODIFY `id_user` bigint(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=29;
 
 --
 -- Constraints for dumped tables
